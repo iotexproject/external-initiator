@@ -24,13 +24,18 @@ var blockchains = []string{
 	ONT,
 	BSC,
 	NEAR,
+	ETH_QAE,
 }
 
 type Params struct {
-	Endpoint   string   `json:"endpoint"`
-	Addresses  []string `json:"addresses"`
-	Topics     []string `json:"eventTopics"`
-	AccountIds []string `json:"accountIds"`
+	Endpoint    string          `json:"endpoint"`
+	Addresses   []string        `json:"addresses"`
+	Topics      []string        `json:"eventTopics"`
+	AccountIds  []string        `json:"accountIds"`
+	Address     string          `json:"address"`
+	ABI         json.RawMessage `json:"abi"`
+	MethodName  string          `json:"methodName"`
+	ResponseKey string          `json:"responseKey"`
 }
 
 // CreateJsonManager creates a new instance of a JSON blockchain manager with the provided
@@ -60,6 +65,8 @@ func CreateClientManager(sub store.Subscription) (subscriber.ISubscriber, error)
 		return createTezosSubscriber(sub), nil
 	case ONT:
 		return createOntSubscriber(sub), nil
+	case ETH_QAE:
+		return createEthQaeSubscriber(sub)
 	}
 
 	return nil, errors.New("unknown blockchain type for Client subscription")
@@ -68,7 +75,7 @@ func CreateClientManager(sub store.Subscription) (subscriber.ISubscriber, error)
 func GetConnectionType(endpoint store.Endpoint) (subscriber.Type, error) {
 	switch endpoint.Type {
 	// Add blockchain implementations that encapsulate entire connection here
-	case XTZ, ONT:
+	case XTZ, ONT, ETH_QAE:
 		return subscriber.Client, nil
 	default:
 		u, err := url.Parse(endpoint.Url)
@@ -121,6 +128,12 @@ func GetValidations(t string, params Params) []int {
 		return []int{
 			len(params.AccountIds),
 		}
+	case ETH_QAE:
+		return []int{
+			len(params.Address),
+			len(params.ABI),
+			len(params.MethodName),
+		}
 	}
 
 	return nil
@@ -152,6 +165,17 @@ func CreateSubscription(sub *store.Subscription, params Params) {
 	case NEAR:
 		sub.NEAR = store.NEARSubscription{
 			AccountIds: params.AccountIds,
+		}
+	case ETH_QAE:
+		key := params.ResponseKey
+		if key == "" {
+			key = defaultResponseKey
+		}
+		sub.EthQae = store.EthQaeSubscription{
+			Address:     params.Address,
+			ABI:         store.SQLBytes(params.ABI),
+			ResponseKey: key,
+			MethodName:  params.MethodName,
 		}
 	}
 }
@@ -195,4 +219,8 @@ func matchesJobID(expected string, actual string) bool {
 	}
 
 	return false
+}
+
+func bytesHave0xPrefix(input []byte) bool {
+	return len(input) >= 2 && input[0] == '0' && (input[1] == 'x' || input[1] == 'X')
 }
